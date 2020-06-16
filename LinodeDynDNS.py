@@ -96,34 +96,53 @@ DEBUG = False
 try:
 	from json import load
 	from urllib.parse import urlencode
-	from urllib.request import urlretrieve
+	from urllib.request import HTTPError, Request, urlopen
 except Exception as excp:
 	exit("Couldn't import the standard library. Are you running Python 3?")
 
-def execute(action, parameters):
-	# Execute a query and return a Python dictionary.
-	uri = "{0}&action={1}".format(API.format(KEY), action)
-	if parameters and len(parameters) > 0:
-		uri = "{0}&{1}".format(uri, urlencode(parameters))
+def _request(method, url, headers=None, params=None, json=None, data=None, timeout=None, return_json=False):
+	jsonlib = __import__('json')
+	if headers is None:
+		headers = {}
+	if 'User-Agent' not in headers:
+		headers.update({'User-Agent': 'DDNS Updater/1.1 (curl/7.19.3)'})
+	if params:
+		if isinstance(params, dict):
+			params = sorted(params.items())
+		else:
+			params = sorted(params)
+		if method == 'GET':
+			url += '?' + urlencode(params)
+		else:
+			data = urlencode(params).encode()
+	if json:
+		assert method != 'GET'
+		data = jsonlib.dumps(json).encode()
+		headers.update({'Content-Type': 'application/json'})
+	if timeout is None:
+		timeout = 8
 	if DEBUG:
-		print("-->", uri)
-	file, headers = urlretrieve(uri)
+		print("-->")
+		print("request:\n", method, url)
+	req = Request(url, data=data, headers=headers)
+	req.get_method = lambda: method
+	try:
+		resp = urlopen(req, timeout=timeout)
+	except HTTPError as e:
+		resp = e
+	content = resp.read()
+	if type(content) == type(b''):
+		content = content.decode('utf-8').strip()
+	if return_json and resp.code == 200:
+		content = jsonlib.loads(content)
 	if DEBUG:
-		print("<--", file)
-		print(headers, end="")
-		print(open(file).read())
+		print("headers:\n", headers)
 		print()
-	json = load(open(file), encoding="utf-8")
-	if len(json["ERRORARRAY"]) > 0:
-		err = json["ERRORARRAY"][0]
-		raise Exception("Error {0}: {1}".format(int(err["ERRORCODE"]),
-			err["ERRORMESSAGE"]))
-	return load(open(file), encoding="utf-8")
+	return resp.code, dict(resp.headers), content
 
 def ip():
-	if DEBUG:
-		print("-->", GETIP)
-	file, headers = urlretrieve(GETIP)
+	_, headers, content = _request('GET', GETIP)
+	result = content.strip()
 	if DEBUG:
 		print("<--", file)
 		print(headers, end="")
@@ -133,27 +152,73 @@ def ip():
 
 def main():
 	try:
-		res = execute("domainResourceGet", {"DomainID": DOMAIN, "ResourceID": RESOURCE})["DATA"]
-		res = res[0] # Turn res from a list to a dict
-		if(len(res)) == 0:
-			raise Exception("No such resource?".format(RESOURCE))
-		public = ip()
-		if res["TARGET"] != public:
-			old = res["TARGET"]
-			request = {
-				"ResourceID": res["RESOURCEID"],
-				"DomainID": res["DOMAINID"],
-				"Name": res["NAME"],
-				"Type": res["TYPE"],
-				"Target": public,
-				"TTL_Sec": res["TTL_SEC"]
-			}
-			execute("domainResourceSave", request)
-			print("OK {0} -> {1}".format(old, public))
-			return 1
-		else:
+		# Set aut headers
+		req_headers = {'Authorization': ' Bearer '+KEY}
+
+		# Determine DomainId
+		_, headers, content = _request('GET', '%s/domains' % (API), headers=req_headers, return_json=True)
+		if DEBUG:
+			print("<--")
+			print("headers:\n", headers)
+			print("result:\n", content)
+			print()
+		for domain in content["data"]:
+			if DOMAIN.endswith(domain["domain"]):
+				matchedDomain = domain
+				break
+			else:
+				matchedDomain = None
+		if matchedDomain is None:
+			raise Exception("Domain not found")
+		domainId = matchedDomain["id"]
+		domainName = matchedDomain["domain"]
+		if DEBUG:
+			print("Found matching domain:")
+			print("  DomainId = {0}".format(domainId))
+			print("  Name = {0}".format(domainName))
+
+		# Determine resource id (subdomain)
+		_, headers, content = _request('GET', '%s/domains/%s/records' % (API, domainId), headers=req_headers, return_json=True)
+		if DEBUG:
+			print("<--")
+			print("headers:\n", headers)
+			print("result:\n", content)
+			print()
+		for resource in content['data']:
+			if domainName == DOMAIN:
+				if resource["name"] == '' and resource['type'] == 'A':
+					matchedResource = resource
+					break
+			elif resource["name"] + "." + domainName == DOMAIN:
+				matchedResource = resource
+				break
+			else:
+				matchedResource = None
+		if matchedResource is None:
+			raise Exception("Resource not found")
+		resourceId = matchedResource["id"]
+		resourceName = matchedResource["name"]
+		oldIp = matchedResource["target"]
+		if DEBUG:
+			print("Found matching resource:")
+			print("  ResourceId = {0}".format(resourceId))
+			print("  ResourceName = {0}".format(resourceName))
+			print("  Target = {0}".format(oldIp))
+
+		# Determine public ip
+		newIp = ip()
+		if oldIp == newIp:
 			print("OK")
 			return 0
+		
+		# Update public ip
+		_, headers, content = _request('PUT', '%s/domains/%s/records/%s' % (API, domainId, resourceId), headers=req_headers, json={'name': resourceName, 'target': newIp})
+		if DEBUG:
+			print("<-- ", headers)
+			print("result: ", content)
+			print()
+		print("OK {0} -> {1}".format(oldIp, newIp))
+		return 1
 	except Exception as excp:
 		import traceback; traceback.print_exc()
 		print("FAIL {0}: {1}".format(type(excp).__name__, excp))
