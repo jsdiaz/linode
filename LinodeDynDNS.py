@@ -94,11 +94,23 @@ DEBUG = False
 # STOP EDITING HERE #
 
 try:
+	import sys
+	import argparse
 	from json import load
 	from urllib.parse import urlencode
 	from urllib.request import HTTPError, Request, urlopen
 except Exception as excp:
 	exit("Couldn't import the standard library. Are you running Python 3?")
+
+DEBUG = False
+
+def getOptions(args=sys.argv[1:]):
+	parser = argparse.ArgumentParser(description="Updates the DNS record for a DDNS entry.")
+	parser.add_argument("-k", "--key", help="Your API key.", required=True)
+	parser.add_argument("-d", "--dnsrecord", dest='domain',  help="The hostname and domain of the DNS record. Eg foo.bar.com", required=True)
+	parser.add_argument("-v", "--verbose", dest='debug', action='store_true', help="Verbose mode.")
+	options = parser.parse_args(args)
+	return options
 
 def _request(method, url, headers=None, params=None, json=None, data=None, timeout=None, return_json=False):
 	jsonlib = __import__('json')
@@ -144,14 +156,20 @@ def ip():
 	_, headers, content = _request('GET', GETIP)
 	result = content.strip()
 	if DEBUG:
-		print("<--", file)
-		print(headers, end="")
-		print(open(file).read())
+		print("<--")
+		print("headers:\n", headers)
+		print("result:\n", result)
 		print()
-	return open(file).read().strip()
+	return result
 
 def main():
 	try:
+		# get args
+		options = getOptions(sys.argv[1:])
+		KEY = options.key
+		DOMAIN = options.domain
+		DEBUG = options.debug
+
 		# Set aut headers
 		req_headers = {'Authorization': ' Bearer '+KEY}
 
@@ -220,7 +238,6 @@ def main():
 		print("OK {0} -> {1}".format(oldIp, newIp))
 		return 1
 	except Exception as excp:
-		import traceback; traceback.print_exc()
 		print("FAIL {0}: {1}".format(type(excp).__name__, excp))
 		return 2
 
