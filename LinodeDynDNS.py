@@ -19,36 +19,8 @@
 #
 #   2. Save it.
 #
-#   3. Go back and edit the A record you just created. Make a note of the
-#      ResourceID in the URI of the page while editing the record.
-#
-#   4. Edit the four configuration options below, following the directions for
+#   3. Edit/confirm the two configuration options below, following the directions for
 #      each.  As this is a quick hack, it assumes everything goes right.
-#
-# First, the resource ID that contains the 'home' record you created above. If
-# the URI while editing that A record looks like this:
-#
-#  linode.com/members/dns/resource_aud.cfm?DomainID=98765&ResourceID=123456
-#  You want 123456. The API key MUST have write access to this resource ID.
-#
-# As of lately ( 5/2016 ) the DOMAINID is not in the URI
-# https://manager.linode.com/dns/resource/domain.com?id=000000
-#                                          Resource ID  ^   
-#
-RESOURCE = "000000"
-#
-#
-# Find this domain by going to the DNS Manager in Linode and then clicking
-# check next to the domain associates with the above resource ID. 
-# Number should be sitting in parentheses next to domain name.
-#
-#
-DOMAIN = "000000"
-#
-# Your Linode API key.  You can generate this by going to your profile in the
-# Linode manager.  It should be fairly long.
-#
-KEY = "abcdefghijklmnopqrstuvwxyz"
 #
 # The URI of a Web service that returns your IP address as plaintext.  You are
 # welcome to leave this at the default value and use mine.  If you want to run
@@ -57,23 +29,30 @@ KEY = "abcdefghijklmnopqrstuvwxyz"
 #     <?php
 #     header("Content-type: text/plain");
 #     printf("%s", $_SERVER["REMOTE_ADDR"]);
+#     ?>
 #
 GETIP = "http://icanhazip.com/"
 #
 # If for some reason the API URI changes, or you wish to send requests to a
-# different URI for debugging reasons, edit this.  {0} will be replaced with the
-# API key set above, and & will be added automatically for parameters.
+# different URI for debugging reasons, edit this.
 #
-API = "https://api.linode.com/api/?api_key={0}&resultFormat=JSON"
-#
-# Comment or remove this line to indicate that you edited the options above.
-#
-exit("Did you edit the options?  vi this file open.")
+API = "https://api.linode.com/v4"
 #
 # That's it!
 #
-# Now run dyndns.py manually, or add it to cron, or whatever.  You can even have
-# multiple copies of the script doing different zones.
+# Now run dyndns.py manually, or add it to cron, or whatever.  You can call
+# the script multiple times to update different zones.
+#
+# The script requires two arguments: the API key and the domain name. Running
+# the script without arguments or with -h/--help will show help text. Running
+# the script with the option -v argument will show verbose/debug output.
+#
+# The API key is your Linode API key.  You can generate this by going to your
+# profile in the Linode manager.  It should be fairly long.
+#
+# The domain name is the full name (hostname and domain name) of the entry you
+# are trying to keep in sync. The API key MUST have write access to the resource
+# ID you specify as the domain name.
 #
 # For automated processing, this script will always print EXACTLY one line, and
 # will also communicate via a return code.  The return codes are:
@@ -85,10 +64,6 @@ exit("Did you edit the options?  vi this file open.")
 # The script will also output one line that starts with either OK or FAIL.  If
 # an update was necessary, OK will have extra information after it.
 #
-# If you want to see responses for troubleshooting, set this:
-#
-DEBUG = False
-
 
 #####################
 # STOP EDITING HERE #
